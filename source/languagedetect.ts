@@ -2,6 +2,8 @@
  *  Modified from https://github.com/ulivz/program-language-detector/blob/master/src/index.js
  */
 
+// @ts-nocheck
+
 const LANGUAGES = {
   JavaScript: [
     // undefined keyword
@@ -360,7 +362,7 @@ function detect(snippet, options=null) {
     results.forEach(result => {
       statistics[result.language] = result.points
     })
-    return { detected: bestResult.language, statistics }
+    return { language: bestResult.language, statistics }
   }
 
   return bestResult.language

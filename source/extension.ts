@@ -113,7 +113,16 @@ function openConnection(socket: WebSocket, request: IncomingMessage) {
 
 function guessFileExtensionByContent(content: string): string
 {
-	const language = detect(content).toLowerCase();
+	const detectedResult = detect(content);
+	let language: string;
+	if (typeof detectedResult === 'object') {
+		language = detectedResult.language;
+	}
+	else
+	{
+		language = detectedResult;
+	}
+	language = language.toLowerCase();
 	const languageMap: Record<string, string> = {
 		'javascript': 'js',
 		'markdown': 'md',
