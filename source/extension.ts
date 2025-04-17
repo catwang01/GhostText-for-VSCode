@@ -10,6 +10,7 @@ import * as codelens from './codelens.js';
 import {documents} from './state.js';
 import {Eaddrinuse, startServer, stopServer} from './server.js';
 import {registerCommand, type Subscriptions} from './vscode.js';
+import { detect } from './languagedetect.js';
 
 /** When the browser sends new content, the editor should not detect this "change" event and echo it */
 let updateFromBrowserInProgress = false;
@@ -29,11 +30,11 @@ function bringEditorToFront() {
 
 type Tab = {document: vscode.TextDocument; editor: vscode.TextEditor};
 
-async function initView(title: string, socket: WebSocket) {
+async function initView(title: string, text: string, socket: WebSocket) {
 	const t = new Date();
 	// This string is visible if multiple tabs are open from the same page
 	const avoidsOverlappingFiles = `${t.getHours()}-${t.getMinutes()}-${t.getSeconds()}`;
-	const filename = `${filenamify(title.trim(), {replacement: '-'})}.${getFileExtension()}`;
+	const filename = `${filenamify(title.trim(), {replacement: '-'})}.${getFileExtension(text)}`;
 	const file = vscode.Uri.from({
 		scheme: 'untitled',
 		path: `${tmpdir()}/${avoidsOverlappingFiles}/${filename}`,
@@ -88,7 +89,7 @@ function openConnection(socket: WebSocket, request: IncomingMessage) {
 			selections: Array<{start: number; end: number}>;
 		};
 
-		tab ??= initView(title, socket);
+		tab ??= initView(title, text, socket);
 		const {document, editor} = await tab;
 
 		// When a message is received, replace the document content with the message
@@ -109,10 +110,30 @@ function openConnection(socket: WebSocket, request: IncomingMessage) {
 	});
 }
 
-function getFileExtension(): string {
+
+function guessFileExtensionByContent(content: string): string
+{
+	const language = detect(content).toLowerCase();
+	const languageMap: Record<string, string> = {
+		'javascript': 'js',
+		'markdown': 'md',
+		'html': 'html',
+		'css': 'css',
+		'typescript': 'ts',
+		'xml': 'xml',
+		'ruby': 'rb',
+		'go': 'go',
+		'php': 'php',
+		'unknown': 'ghosttext',
+		'python': 'py',
+	}
+	return languageMap[language] || 'ghosttext';
+}
+
+function getFileExtension(content: string): string {
 	// Use || to set the default or else an empty field will override it
 	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-	return vscode.workspace.getConfiguration('ghostText').get('fileExtension') || 'ghosttext';
+	return vscode.workspace.getConfiguration('ghostText').get('fileExtension') || guessFileExtensionByContent(content);
 }
 
 function mapEditorSelections(
