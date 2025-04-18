@@ -339,7 +339,7 @@ function detect(snippet, options=null) {
     const checkers = pairs.checkers
 
     if (language === 'Unknown') {
-      return { language: 'Unknown', points: 1 }
+      return { language: 'Unknown', points: 0.5 }
     }
 
     const pointsList = linesOfCode.map((lineOfCode, index) => {
