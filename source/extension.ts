@@ -18,6 +18,9 @@ let updateFromBrowserInProgress = false;
 const exec = promisify(execFile);
 let context: vscode.ExtensionContext;
 
+// Create an output channel to display detection results
+const outputChannel = vscode.window.createOutputChannel('GhostText');
+
 const osxFocus = `
 	tell application "Visual Studio Code"
 		activate
@@ -113,7 +116,9 @@ function openConnection(socket: WebSocket, request: IncomingMessage) {
 
 function guessFileExtensionByContent(content: string): string
 {
-	const detectedResult = detect(content);
+	const detectedResult = detect(content, { heuristic: true, statistics: true });
+	outputChannel.appendLine(`[GhostText] Detected content: ${content}`);
+	outputChannel.appendLine(`[GhostText] Detected result: ${JSON.stringify(detectedResult)}`);
 	let language: string;
 	if (typeof detectedResult === 'object') {
 		language = detectedResult.language;
@@ -136,7 +141,12 @@ function guessFileExtensionByContent(content: string): string
 		'unknown': 'ghosttext',
 		'python': 'py',
 	}
-	return languageMap[language] || 'ghosttext';
+	
+	const extension = languageMap[language] || 'ghosttext';
+	// Send guess result to output channel
+	outputChannel.appendLine(`[GhostText] Detected language: ${language}, using extension: ${extension}`);
+	
+	return extension;
 }
 
 function getFileExtension(content: string): string {
@@ -230,6 +240,11 @@ export async function activate(_context: vscode.ExtensionContext) {
 	context = _context;
 	const {subscriptions} = context;
 
+	// Show output channel
+	outputChannel.show(true); // true means don't force focus to the output window
+	// Add startup message
+	outputChannel.appendLine(`[GhostText] Extension activated - ${new Date().toLocaleString()}`);
+
 	// Listen to commands before starting the server
 	registerListeners(subscriptions);
 
@@ -243,6 +258,9 @@ export async function activate(_context: vscode.ExtensionContext) {
 		throw error;
 	}
 
+	// Add output channel to subscriptions for proper cleanup on extension disable
+	subscriptions.push(outputChannel);
+	
 	subscriptions.push({
 		dispose() {
 			documents.clear();
