@@ -21,12 +21,26 @@ let context: vscode.ExtensionContext;
 // Create an output channel to display detection results
 const outputChannel = vscode.window.createOutputChannel('GhostText');
 
-const osxFocus = `
-	tell application "Visual Studio Code"
+// Get the correct application name based on the product name
+function getEditorApplicationName(): string {
+	// Get product name from VS Code
+	const appName = vscode.env.appName;
+	outputChannel.appendLine(`[GhostText] Using application name: ${appName}`);
+	return appName;
+}
+
+// Dynamic focus script with the correct application name
+function generateOsxFocusScript(): string {
+	const appName = getEditorApplicationName();
+	return `
+	tell application "${appName}"
 		activate
 	end tell`;
+}
+
 function bringEditorToFront() {
 	if (process.platform === 'darwin') {
+		const osxFocus = generateOsxFocusScript();
 		void exec('osascript', ['-e', osxFocus]);
 	}
 }
