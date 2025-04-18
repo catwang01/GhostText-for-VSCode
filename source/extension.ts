@@ -116,7 +116,7 @@ function openConnection(socket: WebSocket, request: IncomingMessage) {
 
 function guessFileExtensionByContent(content: string): string
 {
-	const detectedResult = detect(content, { heuristic: true, statistics: true });
+	const detectedResult = detect(content, { heuristic: true, statistics: true } as any);
 	outputChannel.appendLine(`[GhostText] Detected content: ${content}`);
 	outputChannel.appendLine(`[GhostText] Detected result: ${JSON.stringify(detectedResult)}`);
 	let language: string;
