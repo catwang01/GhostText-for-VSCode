@@ -203,7 +203,10 @@ async function onLocalSelection(event: vscode.TextEditorSelectionChangeEvent) {
 
 	const content = document.getText();
 	const selections = mapEditorSelections(document, field.editor.selections);
-	field.socket.send(JSON.stringify({text: content, selections}));
+	if (content)
+	{
+		field.socket.send(JSON.stringify({text: content, selections}));
+	}
 }
 
 async function onConfigurationChange(event: vscode.ConfigurationChangeEvent) {
@@ -225,7 +228,10 @@ async function onLocalEdit(event: vscode.TextDocumentChangeEvent) {
 
 	const content = document.getText();
 	const selections = mapEditorSelections(document, field.editor.selections);
-	field.socket.send(JSON.stringify({text: content, selections}));
+	if (content)
+	{
+		field.socket.send(JSON.stringify({text: content, selections}));
+	}
 }
 
 function registerListeners(subscriptions: Subscriptions) {
