@@ -100,6 +100,14 @@ function openConnection(socket: WebSocket, request: IncomingMessage) {
 	// Listen for incoming messages on the WebSocket
 	// Don't `await` anything before this or else it might come too late
 	socket.on('message', async (rawMessage) => {
+		const message = JSON.parse(String(rawMessage));
+		if (message.type === 'bringEditorToFront') {
+			bringEditorToFront();
+			const { document } = await tab;
+			 await vscode.window.showTextDocument(document, { preview: false, preserveFocus: false });
+			return;
+		}
+
 		const {text, selections, title} = JSON.parse(String(rawMessage)) as {
 			text: string;
 			title: string;
