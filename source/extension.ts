@@ -10,6 +10,7 @@ import * as codelens from './codelens.js';
 import {documents} from './state.js';
 import {Eaddrinuse, startServer, stopServer} from './server.js';
 import {registerCommand, type Subscriptions} from './vscode.js';
+import { detect } from './languagedetect.js';
 
 /** When the browser sends new content, the editor should not detect this "change" event and echo it */
 let updateFromBrowserInProgress = false;
@@ -17,23 +18,40 @@ let updateFromBrowserInProgress = false;
 const exec = promisify(execFile);
 let context: vscode.ExtensionContext;
 
-const osxFocus = `
-	tell application "Visual Studio Code"
+// Create an output channel to display detection results
+const outputChannel = vscode.window.createOutputChannel('GhostText');
+
+// Get the correct application name based on the product name
+function getEditorApplicationName(): string {
+	// Get product name from VS Code
+	const appName = vscode.env.appName;
+	outputChannel.appendLine(`[GhostText] Using application name: ${appName}`);
+	return appName;
+}
+
+// Dynamic focus script with the correct application name
+function generateOsxFocusScript(): string {
+	const appName = getEditorApplicationName();
+	return `
+	tell application "${appName}"
 		activate
 	end tell`;
+}
+
 function bringEditorToFront() {
 	if (process.platform === 'darwin') {
+		const osxFocus = generateOsxFocusScript();
 		void exec('osascript', ['-e', osxFocus]);
 	}
 }
 
 type Tab = {document: vscode.TextDocument; editor: vscode.TextEditor};
 
-async function initView(title: string, socket: WebSocket) {
+async function initView(title: string, text: string, socket: WebSocket) {
 	const t = new Date();
 	// This string is visible if multiple tabs are open from the same page
 	const avoidsOverlappingFiles = `${t.getHours()}-${t.getMinutes()}-${t.getSeconds()}`;
-	const filename = `${filenamify(title.trim(), {replacement: '-'})}.${getFileExtension()}`;
+	const filename = `${filenamify(title.trim(), {replacement: '-'})}.${getFileExtension(text)}`;
 	const file = vscode.Uri.from({
 		scheme: 'untitled',
 		path: `${tmpdir()}/${avoidsOverlappingFiles}/${filename}`,
@@ -82,13 +100,21 @@ function openConnection(socket: WebSocket, request: IncomingMessage) {
 	// Listen for incoming messages on the WebSocket
 	// Don't `await` anything before this or else it might come too late
 	socket.on('message', async (rawMessage) => {
+		const message = JSON.parse(String(rawMessage));
+		if (message.type === 'bringEditorToFront') {
+			bringEditorToFront();
+			const { document } = await tab;
+			 await vscode.window.showTextDocument(document, { preview: false, preserveFocus: false });
+			return;
+		}
+
 		const {text, selections, title} = JSON.parse(String(rawMessage)) as {
 			text: string;
 			title: string;
 			selections: Array<{start: number; end: number}>;
 		};
 
-		tab ??= initView(title, socket);
+		tab ??= initView(title, text, socket);
 		const {document, editor} = await tab;
 
 		// When a message is received, replace the document content with the message
@@ -109,10 +135,46 @@ function openConnection(socket: WebSocket, request: IncomingMessage) {
 	});
 }
 
-function getFileExtension(): string {
+
+function guessFileExtensionByContent(content: string): string
+{
+	const detectedResult = detect(content, { heuristic: true, statistics: true } as any);
+	outputChannel.appendLine(`[GhostText] Detected content: ${content}`);
+	outputChannel.appendLine(`[GhostText] Detected result: ${JSON.stringify(detectedResult)}`);
+	let language: string;
+	if (typeof detectedResult === 'object') {
+		language = detectedResult.language;
+	}
+	else
+	{
+		language = detectedResult;
+	}
+	language = language.toLowerCase();
+	const languageMap: Record<string, string> = {
+		'javascript': 'js',
+		'markdown': 'md',
+		'html': 'html',
+		'css': 'css',
+		'typescript': 'ts',
+		'xml': 'xml',
+		'ruby': 'rb',
+		'go': 'go',
+		'php': 'php',
+		'unknown': 'ghosttext',
+		'python': 'py',
+	}
+	
+	const extension = languageMap[language] || 'ghosttext';
+	// Send guess result to output channel
+	outputChannel.appendLine(`[GhostText] Detected language: ${language}, using extension: ${extension}`);
+	
+	return extension;
+}
+
+function getFileExtension(content: string): string {
 	// Use || to set the default or else an empty field will override it
 	// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-	return vscode.workspace.getConfiguration('ghostText').get('fileExtension') || 'ghosttext';
+	return vscode.workspace.getConfiguration('ghostText').get('fileExtension') || guessFileExtensionByContent(content);
 }
 
 function mapEditorSelections(
@@ -149,7 +211,10 @@ async function onLocalSelection(event: vscode.TextEditorSelectionChangeEvent) {
 
 	const content = document.getText();
 	const selections = mapEditorSelections(document, field.editor.selections);
-	field.socket.send(JSON.stringify({text: content, selections}));
+	if (content)
+	{
+		field.socket.send(JSON.stringify({text: content, selections}));
+	}
 }
 
 async function onConfigurationChange(event: vscode.ConfigurationChangeEvent) {
@@ -171,7 +236,10 @@ async function onLocalEdit(event: vscode.TextDocumentChangeEvent) {
 
 	const content = document.getText();
 	const selections = mapEditorSelections(document, field.editor.selections);
-	field.socket.send(JSON.stringify({text: content, selections}));
+	if (content)
+	{
+		field.socket.send(JSON.stringify({text: content, selections}));
+	}
 }
 
 function registerListeners(subscriptions: Subscriptions) {
@@ -200,6 +268,11 @@ export async function activate(_context: vscode.ExtensionContext) {
 	context = _context;
 	const {subscriptions} = context;
 
+	// Show output channel
+	outputChannel.show(true); // true means don't force focus to the output window
+	// Add startup message
+	outputChannel.appendLine(`[GhostText] Extension activated - ${new Date().toLocaleString()}`);
+
 	// Listen to commands before starting the server
 	registerListeners(subscriptions);
 
@@ -213,6 +286,9 @@ export async function activate(_context: vscode.ExtensionContext) {
 		throw error;
 	}
 
+	// Add output channel to subscriptions for proper cleanup on extension disable
+	subscriptions.push(outputChannel);
+	
 	subscriptions.push({
 		dispose() {
 			documents.clear();
